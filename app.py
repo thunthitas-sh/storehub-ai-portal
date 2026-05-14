@@ -59,8 +59,8 @@ with tab1:
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
                             
-                            # เปลี่ยนเป็น 'gemini-pro' รุ่นเสถียรถาวรเพื่อแก้ปัญหา 404 บล็อกนี้
-                            model = genai.GenerativeModel('gemini-pro')
+                            # เปลี่ยนเป็น 'gemini-1.5-pro' รุ่นสากลที่เสถียรที่สุดในตอนนี้
+                            model = genai.GenerativeModel('gemini-1.5-pro')
                             
                             prompt = f"สรุปปัญหานี้สั้นๆ เป็นประโยคเดียวคมๆ และร่างเนื้อหาอีเมลเพื่อประสานงานต่อจากข้อความนี้: {t1_raw}"
                             response = model.generate_content(prompt)
@@ -115,12 +115,12 @@ with tab2:
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
                             
-                            # เปลี่ยนเป็นรุ่น 'gemini-pro' เพื่อความเสถียรสูงสุดในบล็อกนี้เช่นกัน
-                            model = genai.GenerativeModel('gemini-pro')
+                            # เปลี่ยนเป็นรุ่น 'gemini-1.5-pro' เช่นกันเพื่อรองรับภาพและการวิเคราะห์ที่แม่นยำขึ้น
+                            model = genai.GenerativeModel('gemini-1.5-pro')
                             
                             analysis_prompt = (
                                 "คุณคือผู้เชี่ยวชาญด้านกลยุทธ์ผลิตภัณฑ์ POS ในตลาดประเทศไทย "
-                                "جงวิเคราะห์ข้อร้องเรียนนี้: '" + str(t2_raw) + "' "
+                                "จงวิเคราะห์ข้อร้องเรียนนี้: '" + str(t2_raw) + "' "
                                 "ให้ตอบกลับมาเป็นข้อๆ อย่างสั้น กระชับ และตรงประเด็นที่สุด ย่อหน้าละ 1 ประโยคเท่านั้น: "
                                 "1. AI Severity Rating: ประเมินดีกรีความรุนแรง คะแนนเป็น 1-10 พร้อมเหตุผลสั้นๆ "
                                 "2. Market Comparison: เมื่อเทียบกับคู่แข่งในไทย เช่น Wongnai POS, Ocha, FoodStory ฟีเจอร์นี้เราเสียเปรียบไหม? "
@@ -133,36 +133,4 @@ with tab2:
                                 
                             response = model.generate_content(content)
                             st.session_state['t2_insight'] = response.text
-                            st.session_state['t2_ai_rating'] = "8/10" if t2_staff_rating in ["สูง", "วิกฤต"] else "4/10"
-                            
-                            # บันทึกลง Supabase
-                            if supabase_url and supabase_key:
-                                curl = supabase_url.strip()
-                                cskey = supabase_key.strip()
-                                headers = {"apikey": cskey, "Authorization": f"Bearer {cskey}", "Content-Type": "application/json"}
-                                payload = {
-                                    "store_name": t2_store, "customer_contact": f"Staff: {t2_staff_rating}",
-                                    "raw_complaint": t2_raw, "ai_category": "Market_Complaint",
-                                    "churn_risk_score": 5 if t2_staff_rating == "วิกฤต" else 3, 
-                                    "ai_elaborated_summary": response.text[:200]
-                                }
-                                requests.post(f"{curl}/rest/v1/onboarding_tickets", headers=headers, json=payload)
-                                st.session_state['t2_saved'] = True
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาดในระบบ AI: {str(e)}")
-
-    with col_insight:
-        st.subheader("💡 AI Insights & ตลาดเชิงกลยุทธ์")
-        if st.session_state.get('t2_insight'):
-            if st.session_state.get('t2_saved'):
-                st.success("💾 บันทึกข้อมูลลงฐานข้อมูลสำเร็จแล้ว!")
-            
-            r_c1, r_c2 = st.columns(2)
-            with r_c1: st.metric("Staff Rating", t2_staff_rating)
-            with r_c2: st.metric("AI Severity", st.session_state['t2_ai_rating'])
-                
-            st.markdown("---")
-            st.markdown("**📌 บทวิเคราะห์เชิงกลยุทธ์ฟีเจอร์:**")
-            st.write(st.session_state['t2_insight'])
-        else:
-            st.info("💡 กรอกข้อมูลคอมเพลนและกดวิเคราะห์ที่ฝั่งซ้ายเพื่อดูผลลัพธ์")
+                            st.session_state['t2_ai_rating'] = "8/1
