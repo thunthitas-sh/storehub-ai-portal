@@ -17,7 +17,7 @@ supabase_key = st.sidebar.text_input("Supabase API Key (anon public)", type="pas
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
 # 2. ส่วนรับข้อมูล
-st.header("📥 1. บันทึกเคสใหม่ (รองรับหลายไฟล์ภาพ/วิดีโอ)")
+st.header("📥 1. บันทึกเคสใหม่ (รองรับภาพและวิดีโอ)")
 col1, col2 = st.columns(2)
 
 with col1:
@@ -34,74 +34,54 @@ if st.button("✨ ส่งข้อมูลและให้ AI ประม�
     if not (supabase_url and supabase_key and gemini_key):
         st.error("❌ กรุณากรอกข้อมูล Keys ให้ครบถ้วน")
     else:
-        with st.spinner("AI กำลังค้นหารุ่นที่รองรับและวิเคราะห์ข้อมูล..."):
+        with st.spinner("AI กำลังวิเคราะห์ข้อมูล..."):
             try:
                 genai.configure(api_key=gemini_key)
-                
-                # --- ระบบค้นหาชื่อรุ่นอัตโนมัติเพื่อแก้ปัญหา 404 ---
+                # ค้นหารุ่นอัตโนมัติ
                 available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                # เรียงลำดับความฉลาด: flash 1.5 -> flash -> pro
-                target_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-flash-latest', 'models/gemini-pro']
+                model = genai.GenerativeModel('gemini-1.5-flash' if 'models/gemini-1.5-flash' in available_models else available_models[0])
                 
-                selected_model_name = None
-                for target in target_models:
-                    if target in available_models:
-                        selected_model_name = target
-                        break
-                
-                if not selected_model_name:
-                    selected_model_name = available_models[0] # ใช้ตัวแรกที่หาเจอถ้าไม่ตรงเงื่อนไข
-                
-                model = genai.GenerativeModel(selected_model_name)
-                # ---------------------------------------------
-
-                content = [f"วิเคราะห์ปัญหานี้ของลูกค้า StoreHub: {raw_complaint}"]
+                content = [f"วิเคราะห์ปัญหาของลูกค้า StoreHub: {raw_complaint}"]
                 if uploaded_files:
                     for uploaded_file in uploaded_files:
                         if uploaded_file.type.startswith('image'):
                             img = Image.open(uploaded_file)
                             content.append(img)
                 
-                prompt = """ตอบเป็น JSON ภาษาไทยเท่านั้น:
-                {
-                  "category": "Hardware/Software/Payment/UserError",
-                  "churn_risk": 1-5,
-                  "elaborated_summary": "สรุปอาการเชิงเทคนิคและวิธีแก้"
-                }"""
-                content.append(prompt)
+                content.append("ตอบเป็น JSON ภาษาไทย: {category, churn_risk(1-5), elaborated_summary}")
                 
                 response = model.generate_content(content)
-                clean_text = response.text.strip()
-                if "```json" in clean_text:
-                    clean_text = clean_text.split("```json")[1].split("```")[0].strip()
-                
+                clean_text = response.text.strip().replace("```json", "").replace("```", "")
                 ai_result = json.loads(clean_text)
                 
-                # บันทึกลง Supabase
+                # --- แสดงผลบนหน้าจอทันที ---
+                st.success("✨ วิเคราะห์สำเร็จ!")
+                st.subheader("🤖 AI Insights")
+                st.write(f"**หมวดหมู่:** {ai_result['category']}")
+                st.write(f"**ความเสี่ยง:** {ai_result['churn_risk']}/5")
+                st.info(f"**สรุปเชิงเทคนิค:** {ai_result['elaborated_summary']}")
+                
+                # --- บันทึกลง Supabase ---
                 headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}", "Content-Type": "application/json"}
                 payload = {
                     "store_name": store_name, "customer_contact": customer_contact,
                     "raw_complaint": raw_complaint, "ai_category": ai_result['category'],
                     "churn_risk_score": ai_result['churn_risk'], "ai_elaborated_summary": ai_result['elaborated_summary'],
-                    "source": "Online_Portal"
+                    "source": "Production_Portal"
                 }
-                res = requests.post(f"{supabase_url}/rest/v1/onboarding_tickets", headers=headers, json=payload)
+                requests.post(f"{supabase_url}/rest/v1/onboarding_tickets", headers=headers, json=payload)
+                st.balloons()
                 
-                if res.status_code in [200, 201]:
-                    st.success(f"🎉 วิเคราะห์เคสร้าน {store_name} สำเร็จ! (ใช้รุ่น: {selected_model_name})")
-                    st.balloons()
             except Exception as e:
                 st.error(f"เกิดข้อผิดพลาด: {str(e)}")
 
 st.markdown("---")
-st.header("📋 2. ตารางประวัติและการสืบค้น")
-# ... (ส่วนตารางเหมือนเดิม)
-
-# เพิ่มส่วนนี้เพื่อให้โชว์ผลลัพธ์บนหน้าจอทันที
-                st.subheader("🤖 ผลการวิเคราะห์จาก AI")
-                st.write(f"**หมวดหมู่:** {ai_result['category']}")
-                st.write(f"**ความเสี่ยง (1-5):** {ai_result['churn_risk']}")
-                st.info(f"**สรุป:** {ai_result['elaborated_summary']}")
-                
-                # ส่วนบันทึกลง Supabase เดิม...
-                res = requests.post(f"{supabase_url}/rest/v1/onboarding_tickets", headers=headers, json=payload)
+st.header("📋 2. ตารางประวัติ (รีเฟรชหน้าเว็บเพื่อดูข้อมูลล่าสุด)")
+if supabase_url and supabase_key:
+    try:
+        headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+        res = requests.get(f"{supabase_url}/rest/v1/onboarding_tickets?select=*&order=created_at.desc", headers=headers)
+        if res.status_code == 200:
+            st.dataframe(pd.DataFrame(res.json())[['created_at', 'store_name', 'ai_category', 'churn_risk_score', 'ai_elaborated_summary']], use_container_width=True)
+    except:
+        pass
