@@ -58,8 +58,6 @@ with tab1:
                         try:
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
-                            
-                            # เปลี่ยนเป็น 'gemini-1.5-pro' รุ่นสากลที่เสถียรที่สุดในตอนนี้
                             model = genai.GenerativeModel('gemini-1.5-pro')
                             
                             prompt = f"สรุปปัญหานี้สั้นๆ เป็นประโยคเดียวคมๆ และร่างเนื้อหาอีเมลเพื่อประสานงานต่อจากข้อความนี้: {t1_raw}"
@@ -103,34 +101,4 @@ with tab2:
             st.subheader("📥 บันทึกข้อมูล Complaints")
             t2_store = st.text_input("🏢 ชื่อบัญชีร้านค้า", key="store_t2")
             t2_staff_rating = st.select_slider("🚩 ทีมเรทความไม่พอใจของลูกค้า", options=["ต่ำ", "กลาง", "สูง", "วิกฤต"])
-            t2_raw = st.text_area("📝 รายละเอียดคอมเพลนดิบ", placeholder="กรอกคอมเพลน...", height=120, key="raw_t2")
-            t2_file = st.file_uploader("📸 อัปโหลดภาพคอมเพลน", type=['png', 'jpg', 'jpeg'], key="file_t2")
-            
-            if st.button("🧠 วิเคราะห์วิสัยทัศน์ตลาดและบันทึก", type="primary", key="btn_t2"):
-                if not gemini_key:
-                    st.error("❌ กรุณากรอก Gemini API Key")
-                else:
-                    with st.spinner("AI กำลังเปรียบเทียบฟีเจอร์กับคู่แข่ง..."):
-                        try:
-                            gkey = gemini_key.strip()
-                            genai.configure(api_key=gkey)
-                            
-                            # เปลี่ยนเป็นรุ่น 'gemini-1.5-pro' เช่นกันเพื่อรองรับภาพและการวิเคราะห์ที่แม่นยำขึ้น
-                            model = genai.GenerativeModel('gemini-1.5-pro')
-                            
-                            analysis_prompt = (
-                                "คุณคือผู้เชี่ยวชาญด้านกลยุทธ์ผลิตภัณฑ์ POS ในตลาดประเทศไทย "
-                                "จงวิเคราะห์ข้อร้องเรียนนี้: '" + str(t2_raw) + "' "
-                                "ให้ตอบกลับมาเป็นข้อๆ อย่างสั้น กระชับ และตรงประเด็นที่สุด ย่อหน้าละ 1 ประโยคเท่านั้น: "
-                                "1. AI Severity Rating: ประเมินดีกรีความรุนแรง คะแนนเป็น 1-10 พร้อมเหตุผลสั้นๆ "
-                                "2. Market Comparison: เมื่อเทียบกับคู่แข่งในไทย เช่น Wongnai POS, Ocha, FoodStory ฟีเจอร์นี้เราเสียเปรียบไหม? "
-                                "3. Feature Priority: ความจำเป็นในการพัฒนาฟีเจอร์นี้ ระดับ Must-have / Should-have / Nice-to-have เพราะอะไร?"
-                            )
-                            
-                            content = [analysis_prompt]
-                            if t2_file:
-                                content.append(Image.open(t2_file))
-                                
-                            response = model.generate_content(content)
-                            st.session_state['t2_insight'] = response.text
-                            st.session_state['t2_ai_rating'] = "8/1
+            t2_raw = st.text_area("📝
