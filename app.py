@@ -101,4 +101,11 @@ with tab2:
             st.subheader("📥 บันทึกข้อมูล Complaints")
             t2_store = st.text_input("🏢 ชื่อบัญชีร้านค้า", key="store_t2")
             t2_staff_rating = st.select_slider("🚩 ทีมเรทความไม่พอใจของลูกค้า", options=["ต่ำ", "กลาง", "สูง", "วิกฤต"])
-            t2_raw = st.text_area("📝
+            
+            # แก้ไขบรรทัดที่ 104: ล้างรูปแบบฟังก์ชัน text_area ให้คลีน ป้องกัน SyntaxError เรื่องข้อความไม่สมบูรณ์
+            t2_raw = st.text_area("📝 รายละเอียดคอมเพลนดิบ", placeholder="กรอกข้อร้องเรียนเพื่อนำไปใช้วิเคราะห์...", height=120, key="raw_t2")
+            t2_file = st.file_uploader("📸 อัปโหลดภาพคอมเพลน", type=['png', 'jpg', 'jpeg'], key="file_t2")
+            
+            if st.button("🧠 วิเคราะห์วิสัยทัศน์ตลาดและบันทึก", type="primary", key="btn_t2"):
+                if not gemini_key:
+                    st.error("❌ กรุณากรอก Gemini API Key")
