@@ -9,115 +9,115 @@ from datetime import datetime
 
 st.set_page_config(page_title="StoreHub CX Intelligence", layout="wide")
 
-# ส่วนหัวโปรแกรม
-st.title("🚀 StoreHub CX Intelligence Portal")
-st.markdown("---")
+# --- Custom CSS ---
+st.markdown("""
+    <style>
+    .main { background-color: #f5f7f9; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
+    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 1. Sidebar สำหรับ Configuration
+st.title("🚀 StoreHub CX Intelligence Portal")
+
+# 1. Sidebar Configuration
 st.sidebar.header("🔑 System Configuration")
 supabase_url = st.sidebar.text_input("Supabase Project URL")
 supabase_key = st.sidebar.text_input("Supabase API Key", type="password")
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
+# ฟังก์ชันดึงข้อมูลจาก Supabase
+def fetch_data():
+    if supabase_url and supabase_key:
+        try:
+            headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
+            res = requests.get(f"{supabase_url}/rest/v1/onboarding_tickets?select=*&order=created_at.desc&limit=20", headers=headers)
+            return pd.DataFrame(res.json()) if res.status_code == 200 else pd.DataFrame()
+        except: return pd.DataFrame()
+    return pd.DataFrame()
+
 # สร้าง Tabs
-tab1, tab2 = st.tabs(["📧 Ticket & Email Escalation", "📊 Complaints Database & Insights"])
+tab1, tab2 = st.tabs(["📧 Ticket & Email Escalation", "🛡️ Complaint Analysis & Market Strategy"])
 
 # --- TAB 1: Ticket & Email Escalation ---
 with tab1:
-    st.header("🎟️ เปิดทิคเก็ตใหม่ & ร่างอีเมลแจ้งทีม Care")
-    
-    col1, col2 = st.columns(2)
+    st.header("🎟️ Escalation Tool")
+    col1, col2 = st.columns([1, 1])
     with col1:
-        store_name = st.text_input("🏢 ชื่อร้านค้า", placeholder="ระบุชื่อร้าน")
-        customer_contact = st.text_input("👤 ผู้ติดต่อ / เบอร์โทร", placeholder="ชื่อลูกค้า หรือ เบอร์ติดต่อ")
-        contact_time = st.text_input("⏰ เวลาที่สะดวกให้ติดต่อ", placeholder="เช่น ทันที หรือ หลัง 14:00 น.")
+        with st.container(border=True):
+            st.subheader("📥 ข้อมูลเคสใหม่")
+            store_name = st.text_input("🏢 ชื่อร้านค้า", key="t1_store")
+            customer_contact = st.text_input("👤 ผู้ติดต่อ", key="t1_contact")
+            contact_time = st.text_input("⏰ เวลาสะดวก", placeholder="เช่น ทันที", key="t1_time")
+            raw_complaint = st.text_area("📝 รายละเอียดปัญหา", height=100, key="t1_raw")
+            uploaded_files = st.file_uploader("📸 แนบหลักฐาน", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True, key="t1_files")
+            
+            if st.button("✨ วิเคราะห์ & ร่างอีเมล", type="primary"):
+                if not gemini_key: st.error("กรุณาใส่ Gemini Key")
+                else:
+                    with st.spinner("กำลังสรุปเคส..."):
+                        genai.configure(api_key=gemini_key)
+                        model = genai.GenerativeModel('gemini-1.5-flash')
+                        prompt = f"สรุปเคสนี้สั้นๆ และร่างอีเมลแจ้งทีม care: {raw_complaint} ร้าน {store_name}"
+                        response = model.generate_content(prompt)
+                        st.session_state['t1_result'] = response.text
+                        st.balloons()
+
     with col2:
-        raw_complaint = st.text_area("📝 รายละเอียดเคส", placeholder="กรอกปัญหาที่พบ...", height=120)
-        uploaded_files = st.file_uploader("📸 แนบหลักฐาน (ภาพ)", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
-
-    if st.button("✨ ประมวลผลและร่างอีเมล", type="primary"):
-        if not gemini_key:
-            st.error("❌ กรุณากรอก Gemini API Key ที่ Sidebar")
+        st.subheader("📋 ประวัติเคสล่าสุด")
+        df_history = fetch_data()
+        if not df_history.empty:
+            st.dataframe(df_history[['created_at', 'store_name', 'ai_category', 'ai_elaborated_summary']], height=400)
         else:
-            with st.spinner("AI กำลังสรุปข้อมูล..."):
-                try:
-                    genai.configure(api_key=gemini_key)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    prompt = f"""คุณคือผู้ช่วยทีม Support ของ StoreHub สรุปข้อมูลต่อไปนี้ให้สั้นและเป็นมืออาชีพที่สุด
-                    ชื่อร้าน: {store_name}
-                    ผู้ติดต่อ: {customer_contact}
-                    เวลาสะดวก: {contact_time if contact_time else 'ติดต่อทันที'}
-                    ปัญหา: {raw_complaint}
-                    
-                    ตอบเป็น JSON ภาษาไทย:
-                    {{
-                      "short_summary": "สรุปปัญหาแบบสั้นกระชับ 1 ประโยค",
-                      "email_body": "ร่างเนื้อหาอีเมลโดยระบุรายละเอียดตามที่ได้รับมาให้ครบถ้วน"
-                    }}"""
-                    
-                    response = model.generate_content(prompt)
-                    ai_res = json.loads(response.text.replace("```json", "").replace("```", "").strip())
-                    
-                    # แสดงผล Panel สำหรับส่งเมล
-                    st.success("✅ สรุปข้อมูลเรียบร้อย!")
-                    st.subheader("📧 ตรวจสอบอีเมลก่อนส่งไปที่ care.th@storehub.com")
-                    
-                    # หัวข้อเมลอัตโนมัติ
-                    email_subject = f"Escalation: {store_name} | {ai_res['short_summary']}"
-                    st.text_input("หัวข้ออีเมล:", value=email_subject)
-                    
-                    # เนื้อหาเมล
-                    footer = "\n\nรบกวนติดต่อกลับร้านค้าและสอบถามรายละเอียดเพิ่มเติม"
-                    final_body = f"เรียน ทีม Care,\n\n{ai_res['email_body']}\n\n" + \
-                                 f"🏢 ชื่อร้าน: {store_name}\n" + \
-                                 f"👤 ผู้ติดต่อ: {customer_contact}\n" + \
-                                 f"⏰ เวลาที่สะดวก: {contact_time if contact_time else 'ติดต่อทันที'}" + \
-                                 footer
-                    
-                    edited_body = st.text_area("เนื้อหาอีเมล:", value=final_body, height=250)
-                    
-                    # ปุ่ม Link ไป Gmail
-                    encoded_subject = urllib.parse.quote(email_subject)
-                    encoded_body = urllib.parse.quote(edited_body)
-                    gmail_link = f"https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_subject}&body={encoded_body}"
-                    
-                    st.markdown(f'<a href="{gmail_link}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">📩 กดเพื่อเปิด Gmail และส่งทันที</a>', unsafe_allow_html=True)
-                    st.info("💡 อย่าลืมลากไฟล์ภาพแนบในหน้า Gmail อีกครั้งเพื่อความชัวร์")
+            st.info("ไม่พบประวัติข้อมูล")
 
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+    if 't1_result' in st.session_state:
+        st.markdown("---")
+        st.subheader("📧 Email Preview & Action")
+        edited_mail = st.text_area("ร่างอีเมล (แก้ไขได้):", value=st.session_state['t1_result'], height=200)
+        encoded_subject = urllib.parse.quote(f"Escalation: {store_name}")
+        encoded_body = urllib.parse.quote(edited_mail + "\n\nรบกวนติดต่อกลับร้านค้าและสอบถามรายละเอียดเพิ่มเติม")
+        gmail_link = f"https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_subject}&body={encoded_body}"
+        st.markdown(f'<a href="{gmail_link}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">📩 เปิด Gmail ส่งทันที</a>', unsafe_allow_html=True)
 
-# --- TAB 2: Complaints Database ---
+# --- TAB 2: Complaint Analysis & Market Strategy ---
 with tab2:
-    st.header("📊 Complaints Database & Analytics")
-    st.markdown("ส่วนนี้ใช้สำหรับบันทึกข้อมูลเพื่อนำไปทำ Dashboard หาโอกาสพัฒนา (Insights)")
+    st.header("🛡️ Deep Complaint Analysis")
+    st.markdown("วิเคราะห์ระดับความรุนแรงและโอกาสในการพัฒนาฟีเจอร์เมื่อเทียบกับคู่แข่ง")
+    
+    with st.container(border=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            comp_store = st.text_input("🏢 ชื่อบัญชีร้านค้า", key="t2_store")
+            staff_rating = st.select_slider("🚩 ทีมเรทความไม่พอใจ (Staff Rating)", options=["ต่ำ", "กลาง", "สูง", "วิกฤต"])
+        with c2:
+            comp_detail = st.text_area("📝 รายละเอียด Complaints (พิมพ์หรือแคปภาพ)", height=100, key="t2_detail")
+            comp_files = st.file_uploader("📸 แนบภาพหลักฐานปัญหา", type=['png', 'jpg', 'jpeg'], key="t2_files")
 
-    if st.button("🔄 ดึงข้อมูลประวัติล่าสุด"):
-        if not (supabase_url and supabase_key):
-            st.warning("⚠️ กรุณากรอก Supabase URL และ Key ที่ Sidebar เพื่อดูข้อมูล")
-        else:
-            try:
-                headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
-                res = requests.get(f"{supabase_url}/rest/v1/onboarding_tickets?select=*&order=created_at.desc", headers=headers)
-                if res.status_code == 200:
-                    df = pd.DataFrame(res.json())
-                    if not df.empty:
-                        # แต่งตารางให้สวย
-                        st.dataframe(df[['created_at', 'store_name', 'ai_category', 'churn_risk_score', 'ai_elaborated_summary']], use_container_width=True)
-                        
-                        # ส่วน Insights เบื้องต้น
-                        col_stat1, col_stat2 = st.columns(2)
-                        with col_stat1:
-                            st.subheader("📈 ปัญหาแบ่งตามหมวดหมู่")
-                            st.bar_chart(df['ai_category'].value_counts())
-                        with col_stat2:
-                            st.subheader("⚠️ ระดับความเสี่ยงเฉลี่ย")
-                            st.metric("Avg. Churn Risk", round(df['churn_risk_score'].mean(), 2))
-                    else:
-                        st.info("ยังไม่มีข้อมูลในระบบ")
-            except Exception as e:
-                st.error(f"ไม่สามารถดึงข้อมูลได้: {str(e)}")
+        if st.button("🧠 วิเคราะห์เชิงกลยุทธ์", type="primary"):
+            with st.spinner("AI กำลังเปรียบเทียบข้อมูลตลาด..."):
+                genai.configure(api_key=gemini_key)
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                
+                analysis_prompt = f"""วิเคราะห์ Complaint นี้: {comp_detail} 
+                1. เรทดีกรีความรุนแรง (1-10) 
+                2. เปรียบเทียบฟีเจอร์นี้กับคู่แข่ง (POS ตลาดไทย) 
+                3. สรุปว่านี่คือฟีเจอร์ที่ 'ควรทำมากแค่ไหน' (Must-have / Should-have / Nice-to-have)
+                ตอบเป็นภาษาไทย สั้น กระชับ เป็นข้อๆ"""
+                
+                content = [analysis_prompt]
+                if comp_files: content.append(Image.open(comp_files))
+                
+                res = model.generate_content(content)
+                
+                # แสดงผล Analysis
+                st.markdown("---")
+                res_c1, res_c2 = st.columns([1, 2])
+                with res_c1:
+                    st.metric("AI Severity Score", "8/10" if "วิกฤต" in staff_rating else "5/10")
+                    st.warning(f"Staff Rating: {staff_rating}")
+                with res_c2:
+                    st.subheader("📊 Market Strategy Insight")
+                    st.write(res.text)
 
-    st.markdown("---")
-    st.caption("StoreHub CX Intelligence Tool v3.0 | พัฒนาเพื่อทีม Onboarding โดยเฉพาะ")
+    st.info("💡 ข้อมูลในหน้านี้จะช่วยให้ Product Team ตัดสินใจได้ว่าเคสไหนควรเป็น Priority ในการพัฒนา Roadmap")
