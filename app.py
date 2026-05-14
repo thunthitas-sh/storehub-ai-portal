@@ -21,7 +21,6 @@ gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 def fetch_supabase_history():
     if supabase_url and supabase_key:
         try:
-            # ล้างค่าช่องว่างหากมีหลุดมา
             clean_url = supabase_url.strip()
             clean_skey = supabase_key.strip()
             headers = {"apikey": clean_skey, "Authorization": f"Bearer {clean_skey}"}
@@ -57,13 +56,17 @@ with tab1:
                 else:
                     with st.spinner("AI กำลังสรุปข้อมูล..."):
                         try:
-                            # ล้างค่าช่องว่างเพื่อป้องกัน Illegal metadata
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
-                            model = genai.GenerativeModel('gemini-1.5-flash')
                             
-                            prompt = f"สรุปปัญหาร้าน {t1_store} แบบสั้นกระชับ 1 ประโยค และร่างเนื้อหาประสานงานจากปัญหา: {t1_raw}"
+                            # แก้จุดนี้: ใส่พาร์ทเต็ม 'models/' เพื่อแก้ 404 บน v1beta
+                            model = genai.GenerativeModel('models/gemini-1.5-flash')
+                            
+                            prompt = f"สรุปปัญหานี้สั้นๆ เป็นประโยคเดียวคมๆ และร่างเนื้อหาอีเมลเพื่อประสานงานต่อจากข้อความนี้: {t1_raw}"
                             response = model.generate_content(prompt)
+                            
+                            # ตรวจสอบและล้าง markdown ของ AI ออกถ้ามี
+                            clean_res = response.text.replace("```json", "").replace("```", "").strip()
                             
                             st.session_state['t1_ready'] = True
                             st.session_state['t1_subject'] = f"Escalation: {t1_store}"
@@ -112,54 +115,15 @@ with tab2:
                 else:
                     with st.spinner("AI กำลังเปรียบเทียบฟีเจอร์กับคู่แข่ง..."):
                         try:
-                            # ล้างค่าช่องว่างเพื่อป้องกันข้อผิดพลาด
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
-                            model = genai.GenerativeModel('gemini-1.5-flash')
                             
-                            analysis_prompt = f"""วิเคราะห์ข้อร้องเรียนนี้ในฐานะผู้เชี่ยวชาญ POS ตลาดไทย: "{t2_raw}"
-                            สรุปให้สั้น กระชับ เป็นข้อๆ:
-                            1. **AI Severity Rating**: ประเมินดีกรีความรุนแรง (1-10) พร้อมเหตุผลสั้นๆ 1 ประโยค
-                            2. **Market Comparison**: เมื่อเทียบกับคู่แข่งในไทย (Wongnai POS, Ocha, FoodStory) ฟีเจอร์นี้สำคัญกว่าไหม?
-                            3. **Feature Priority**: ความจำเป็นในการพัฒนาฟีเจอร์นี้ (Must-have / Should-have / Nice-to-have) เพราะอะไร?
-                            """
+                            # แก้จุดนี้เช่นกัน: ใส่พาร์ทเต็ม 'models/' เพื่อกัน 404 บล็อกนี้
+                            model = genai.GenerativeModel('models/gemini-1.5-flash')
                             
-                            content = [analysis_prompt]
-                            if t2_file:
-                                content.append(Image.open(t2_file))
-                                
-                            response = model.generate_content(content)
-                            st.session_state['t2_insight'] = response.text
-                            st.session_state['t2_ai_rating'] = "8/10" if t2_staff_rating in ["สูง", "วิกฤต"] else "4/10"
+                            analysis_prompt = f"""คุณคือผู้เชี่ยวชาญด้านกลยุทธ์ผลิตภัณฑ์ POS ในตลาดประเทศไทย 
+                            จงวิเคราะห์ข้อร้องเรียนนี้: "{t2_raw}"
                             
-                            # บันทึกลง Supabase
-                            if supabase_url and supabase_key:
-                                curl = supabase_url.strip()
-                                cskey = supabase_key.strip()
-                                headers = {"apikey": cskey, "Authorization": f"Bearer {cskey}", "Content-Type": "application/json"}
-                                payload = {
-                                    "store_name": t2_store, "customer_contact": f"Staff: {t2_staff_rating}",
-                                    "raw_complaint": t2_raw, "ai_category": "Market_Complaint",
-                                    "churn_risk_score": 5 if t2_staff_rating == "วิกฤต" else 3, 
-                                    "ai_elaborated_summary": response.text[:200]
-                                }
-                                requests.post(f"{curl}/rest/v1/onboarding_tickets", headers=headers, json=payload)
-                                st.session_state['t2_saved'] = True
-                        except Exception as e:
-                            st.error(f"เกิดข้อผิดพลาดในระบบ AI: {str(e)}")
-
-    with col_insight:
-        st.subheader("💡 AI Insights & ตลาดเชิงกลยุทธ์")
-        if st.session_state.get('t2_insight'):
-            if st.session_state.get('t2_saved'):
-                st.success("💾 บันทึกข้อมูลลงฐานข้อมูลสำเร็จแล้ว!")
-            
-            r_c1, r_c2 = st.columns(2)
-            with r_c1: st.metric("Staff Rating", t2_staff_rating)
-            with r_c2: st.metric("AI Severity", st.session_state['t2_ai_rating'])
-                
-            st.markdown("---")
-            st.markdown("**📌 บทวิเคราะห์เชิงกลยุทธ์ฟีเจอร์:**")
-            st.write(st.session_state['t2_insight'])
-        else:
-            st.info("💡 กรอกข้อมูลคอมเพลนและกดวิเคราะห์ที่ฝั่งซ้ายเพื่อดูผลลัพธ์")
+                            ให้ตอบกลับมาเป็นข้อๆ อย่างสั้น กระชับ และตรงประเด็นที่สุด (เน้นเนื้อหา ไม่เอาน้ำ ย่อหน้าละ 1 ประโยคพอ):
+                            1. **AI Severity Rating**: ประเมินดีกรีความรุนแรง (คะแนนเป็น 1-10 พร้อมเหตุผลสั้นๆ 1 ประโยค)
+                            2. **Market Comparison**: เมื่อเทียบกับคู่แข่งในไทย (Wongnai POS, Ocha, FoodStory) ฟีเจอร์
