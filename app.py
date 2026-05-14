@@ -58,15 +58,10 @@ with tab1:
                         try:
                             gkey = gemini_key.strip()
                             genai.configure(api_key=gkey)
-                            
-                            # แก้จุดนี้: ใส่พาร์ทเต็ม 'models/' เพื่อแก้ 404 บน v1beta
                             model = genai.GenerativeModel('models/gemini-1.5-flash')
                             
                             prompt = f"สรุปปัญหานี้สั้นๆ เป็นประโยคเดียวคมๆ และร่างเนื้อหาอีเมลเพื่อประสานงานต่อจากข้อความนี้: {t1_raw}"
                             response = model.generate_content(prompt)
-                            
-                            # ตรวจสอบและล้าง markdown ของ AI ออกถ้ามี
-                            clean_res = response.text.replace("```json", "").replace("```", "").strip()
                             
                             st.session_state['t1_ready'] = True
                             st.session_state['t1_subject'] = f"Escalation: {t1_store}"
@@ -99,31 +94,4 @@ with tab1:
 # ==========================================
 with tab2:
     st.header("🛡️ บันทึก Complaints & วิเคราะห์เชิงฟีเจอร์และคู่แข่งตลาด")
-    col_input, col_insight = st.columns([1, 1])
-    
-    with col_input:
-        with st.container(border=True):
-            st.subheader("📥 บันทึกข้อมูล Complaints")
-            t2_store = st.text_input("🏢 ชื่อบัญชีร้านค้า", key="store_t2")
-            t2_staff_rating = st.select_slider("🚩 ทีมเรทความไม่พอใจของลูกค้า", options=["ต่ำ", "กลาง", "สูง", "วิกฤต"])
-            t2_raw = st.text_area("📝 รายละเอียดคอมเพลนดิบ", placeholder="กรอกคอมเพลน...", height=120, key="raw_t2")
-            t2_file = st.file_uploader("📸 อัปโหลดภาพคอมเพลน", type=['png', 'jpg', 'jpeg'], key="file_t2")
-            
-            if st.button("🧠 วิเคราะห์วิสัยทัศน์ตลาดและบันทึก", type="primary", key="btn_t2"):
-                if not gemini_key:
-                    st.error("❌ กรุณากรอก Gemini API Key")
-                else:
-                    with st.spinner("AI กำลังเปรียบเทียบฟีเจอร์กับคู่แข่ง..."):
-                        try:
-                            gkey = gemini_key.strip()
-                            genai.configure(api_key=gkey)
-                            
-                            # แก้จุดนี้เช่นกัน: ใส่พาร์ทเต็ม 'models/' เพื่อกัน 404 บล็อกนี้
-                            model = genai.GenerativeModel('models/gemini-1.5-flash')
-                            
-                            analysis_prompt = f"""คุณคือผู้เชี่ยวชาญด้านกลยุทธ์ผลิตภัณฑ์ POS ในตลาดประเทศไทย 
-                            จงวิเคราะห์ข้อร้องเรียนนี้: "{t2_raw}"
-                            
-                            ให้ตอบกลับมาเป็นข้อๆ อย่างสั้น กระชับ และตรงประเด็นที่สุด (เน้นเนื้อหา ไม่เอาน้ำ ย่อหน้าละ 1 ประโยคพอ):
-                            1. **AI Severity Rating**: ประเมินดีกรีความรุนแรง (คะแนนเป็น 1-10 พร้อมเหตุผลสั้นๆ 1 ประโยค)
-                            2. **Market Comparison**: เมื่อเทียบกับคู่แข่งในไทย (Wongnai POS, Ocha, FoodStory) ฟีเจอร์
+    col_input,
