@@ -96,3 +96,12 @@ if st.button("✨ ส่งข้อมูลและให้ AI ประม�
 st.markdown("---")
 st.header("📋 2. ตารางประวัติและการสืบค้น")
 # ... (ส่วนตารางเหมือนเดิม)
+
+# เพิ่มส่วนนี้เพื่อให้โชว์ผลลัพธ์บนหน้าจอทันที
+                st.subheader("🤖 ผลการวิเคราะห์จาก AI")
+                st.write(f"**หมวดหมู่:** {ai_result['category']}")
+                st.write(f"**ความเสี่ยง (1-5):** {ai_result['churn_risk']}")
+                st.info(f"**สรุป:** {ai_result['elaborated_summary']}")
+                
+                # ส่วนบันทึกลง Supabase เดิม...
+                res = requests.post(f"{supabase_url}/rest/v1/onboarding_tickets", headers=headers, json=payload)
