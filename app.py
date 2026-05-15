@@ -1,132 +1,119 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
-import json
 import requests
 from PIL import Image
 import urllib.parse
+import altair as alt
 
-# 1. ตั้งค่าหน้าเว็บพื้นฐาน
-st.set_page_config(page_title="StoreHub CX Intelligence", layout="wide")
-
+# 1. ตั้งค่าพื้นฐาน
+st.set_page_config(page_title="StoreHub CX Intelligence v4", layout="wide")
 st.title("🚀 StoreHub CX Intelligence Portal")
-st.markdown("---")
 
 # 2. Sidebar Configuration
 st.sidebar.header("🔑 System Configuration")
-supabase_url = st.sidebar.text_input("Supabase Project URL")
-supabase_key = st.sidebar.text_input("Supabase API Key", type="password")
+supabase_url = st.sidebar.text_input("Supabase URL")
+supabase_key = st.sidebar.text_input("Supabase Key", type="password")
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-# ฟังก์ชันดึงประวัติจาก Supabase
-@st.cache_data(ttl=30)
-def fetch_history(url, key):
+# ฟังก์ชันดึงประวัติ (ใช้ทั้ง 2 แท็บ)
+@st.cache_data(ttl=10)
+def fetch_data(url, key, table="onboarding_tickets"):
     if url and key:
         try:
             headers = {"apikey": key.strip(), "Authorization": f"Bearer {key.strip()}"}
-            res = requests.get(f"{url.strip()}/rest/v1/onboarding_tickets?select=*&order=created_at.desc&limit=10", headers=headers)
+            res = requests.get(f"{url.strip()}/rest/v1/{table}?select=*&order=created_at.desc", headers=headers)
             if res.status_code == 200:
                 return pd.DataFrame(res.json())
-        except:
-            pass
+        except: pass
     return pd.DataFrame()
 
-# ฟังก์ชันเรียก AI แบบ Auto-Detect รุ่นโมเดล (แก้ปัญหา 404 ถาวร)
-def run_ai_analysis(api_key, prompt_data):
+# ฟังก์ชันเรียก AI แบบ Auto-Detect รุ่น
+def run_ai(api_key, content):
     try:
         genai.configure(api_key=api_key.strip())
-        
-        # ค้นหาโมเดลที่ใช้งานได้จริงในบัญชีปัจจุบัน
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # เลือกโมเดล Flash เป็นหลัก หากไม่มีให้ใช้รุ่น Pro หรือตัวแรกที่เจอ
-        selected_model = next((m for m in available_models if "flash" in m), 
-                             next((m for m in available_models if "pro" in m), 
-                             available_models[0]))
-        
-        model = genai.GenerativeModel(selected_model)
-        response = model.generate_content(prompt_data)
-        return response.text
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        sel_model = next((m for m in models if "flash" in m), models[0])
+        model = genai.GenerativeModel(sel_model)
+        return model.generate_content(content).text
     except Exception as e:
-        st.error(f"❌ AI Error: {str(e)}")
-        return None
+        return f"Error: {str(e)}"
 
-# สร้าง Tabs
-tab1, tab2 = st.tabs(["📧 Escalation Tool", "🛡️ Strategic Analysis"])
+tab1, tab2 = st.tabs(["📧 Ticket Escalation (Video Support)", "📊 Analysis Dashboard & Market Strategy"])
 
-# --- TAB 1: Escalation & Email ---
+# --- TAB 1: Ticket Escalation ---
 with tab1:
-    col_in, col_hist = st.columns([1, 1])
-    with col_in:
-        with st.form("esc_form"):
-            st.subheader("📥 บันทึกเคสใหม่")
-            name = st.text_input("🏢 ชื่อร้านค้า")
-            contact = st.text_input("👤 ผู้ติดต่อ")
-            time = st.text_input("⏰ เวลาสะดวก", placeholder="เช่น ทันที")
-            detail = st.text_area("📝 รายละเอียดปัญหา")
-            files = st.file_uploader("📸 แนบภาพ", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
-            submit_esc = st.form_submit_button("✨ วิเคราะห์และร่างอีเมล", type="primary")
-
-            if submit_esc:
-                if not gemini_key:
-                    st.error("กรุณาใส่ Gemini Key ที่ Sidebar")
-                else:
-                    with st.spinner("AI กำลังวิเคราะห์ข้อมูล..."):
-                        content = [f"สรุปปัญหาร้าน {name} สั้นๆ 1 ประโยค และร่างอีเมลแจ้งทีม care: {detail}"]
-                        if files:
-                            for f in files:
-                                content.append(Image.open(f))
-                        
-                        res = run_ai_analysis(gemini_key, content)
-                        if res:
-                            st.session_state['t1_res'] = res
-                            # บันทึกลง Supabase
-                            if supabase_url and supabase_key:
-                                h = {"apikey": supabase_key.strip(), "Authorization": f"Bearer {supabase_key.strip()}", "Content-Type": "application/json"}
-                                p = {"store_name": name, "customer_contact": contact, "raw_complaint": detail, "ai_category": "Escalation", "ai_elaborated_summary": res[:150]}
-                                requests.post(f"{supabase_url.strip()}/rest/v1/onboarding_tickets", headers=h, json=p)
-
-    with col_hist:
-        st.subheader("📋 ประวัติล่าสุด")
-        df = fetch_history(supabase_url, supabase_key)
-        if not df.empty:
-            st.dataframe(df[['created_at', 'store_name', 'ai_elaborated_summary']], use_container_width=True)
-
-    if 't1_res' in st.session_state:
-        st.markdown("---")
-        email_body = f"เรียน ทีม Care,\n\n{st.session_state['t1_res']}\n\n🏢 ชื่อร้าน: {name}\n👤 ผู้ติดต่อ: {contact}\n⏰ เวลาติดต่อ: {time if time else 'ทันที'}\n\nรบกวนติดต่อกลับร้านค้าและสอบถามรายละเอียดเพิ่มเติม"
-        st.text_area("📧 ร่างอีเมล (ตรวจสอบก่อนส่ง):", value=email_body, height=200)
-        
-        encoded_su = urllib.parse.quote(f"Escalation: {name}")
-        encoded_bo = urllib.parse.quote(email_body)
-        st.markdown(f'<a href="https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_su}&body={encoded_bo}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">📬 เปิด Gmail และส่งทันที</a>', unsafe_allow_html=True)
-
-# --- TAB 2: Market Analysis ---
-with tab2:
-    st.header("🛡️ วิเคราะห์ Complaints เชิงลึก")
     c1, c2 = st.columns([1, 1])
     with c1:
-        with st.form("comp_form"):
-            t2_store = st.text_input("🏢 ชื่อบัญชีร้านค้า")
-            t2_rate = st.select_slider("🚩 ทีมเรทความไม่พอใจ", options=["ต่ำ", "กลาง", "สูง", "วิกฤต"])
-            t2_detail = st.text_area("📝 รายละเอียด (พิมพ์หรือแคปภาพ)")
-            t2_img = st.file_uploader("📸 หลักฐาน", type=['png', 'jpg', 'jpeg'])
-            submit_t2 = st.form_submit_button("🧠 วิเคราะห์กลยุทธ์", type="primary")
+        with st.form("t1_form"):
+            t1_store = st.text_input("🏢 ชื่อร้านค้า")
+            t1_detail = st.text_area("📝 รายละเอียดปัญหา (AI จะสรุปให้สั้นที่สุด)")
+            # รองรับวิดีโอ
+            t1_files = st.file_uploader("📸 แนบภาพหรือวิดีโอหลักฐาน", type=['png','jpg','jpeg','mp4','mov'], accept_multiple_files=True)
+            submit1 = st.form_submit_button("✨ วิเคราะห์และร่างเมลสั้น", type="primary")
 
-            if submit_t2:
-                if not gemini_key:
-                    st.error("กรุณากรอก Gemini API Key")
-                else:
-                    with st.spinner("AI กำลังเปรียบเทียบตลาด..."):
-                        p2 = f"วิเคราะห์ความรุนแรง (1-10) และเปรียบเทียบฟีเจอร์นี้กับคู่แข่ง POS ในไทย ปัญหานี้ควรพัฒนาด่วนแค่ไหน (Must/Should/Nice to have): {t2_detail}"
-                        data_t2 = [p2]
-                        if t2_img:
-                            data_t2.append(Image.open(t2_img))
-                        st.session_state['t2_insight'] = run_ai_analysis(gemini_key, data_t2)
-                        st.session_state['t2_rate_val'] = t2_rate
-
+            if submit1 and gemini_key:
+                with st.spinner("AI กำลังสรุปเคสแบบกระชับ..."):
+                    prompt = f"สรุปปัญหานี้เป็นประโยคเดียวสั้นๆ ไม่เกิน 20 คำ เพื่อใส่ในอีเมล: {t1_detail}"
+                    st.session_state['t1_res'] = run_ai(gemini_key, prompt)
+                    # บันทึกลง Supabase (Optional)
+    
     with c2:
+        if 't1_res' in st.session_state:
+            st.subheader("📩 ร่างอีเมล (ฉบับกระชับ)")
+            mail_body = f"เรียน ทีม Care,\n\nพบปัญหา: {st.session_state['t1_res']}\n\nร้าน: {t1_store}\nรบกวนตรวจสอบและติดต่อกลับร้านค้าเพิ่มเติมครับ"
+            st.text_area("เนื้อหา:", value=mail_body, height=150)
+            encoded_su = urllib.parse.quote(f"Escalation: {t1_store}")
+            encoded_bo = urllib.parse.quote(mail_body)
+            st.markdown(f'<a href="https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_su}&body={encoded_bo}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">📬 ส่ง Gmail</a>', unsafe_allow_html=True)
+
+# --- TAB 2: Analysis & Dashboard ---
+with tab2:
+    # 1. Dashboard ส่วนบน
+    st.subheader("📈 Dashboard Summary")
+    df_all = fetch_data(supabase_url, supabase_key)
+    if not df_all.empty:
+        # จำลองหมวดหมู่สำหรับ Dashboard (ในงานจริงควรใช้ AI ช่วยจัดหมวดตอนบันทึก)
+        df_all['category'] = df_all['ai_category'].fillna('Other')
+        chart = alt.Chart(df_all).mark_bar().encode(
+            x=alt.X('count()', title='จำนวนเคส'),
+            y=alt.Y('category:N', sort='-x', title='หมวดหมู่'),
+            color='category:N'
+        ).properties(height=200)
+        st.altair_chart(chart, use_container_width=True)
+    
+    st.markdown("---")
+    
+    # 2. ส่วนกรอกข้อมูลและวิเคราะห์
+    col_in, col_hist = st.columns([1, 1])
+    with col_in:
+        with st.form("t2_form"):
+            t2_store = st.text_input("🏢 ชื่อร้าน (Market Analysis)")
+            t2_raw = st.text_area("📝 รายละเอียดคอมเพลน / Feature Request")
+            submit2 = st.form_submit_button("🧠 วิเคราะห์คู่แข่ง & บันทึก", type="primary")
+
+            if submit2 and gemini_key:
+                with st.spinner("AI กำลังเปรียบเทียบคู่แข่ง..."):
+                    p2 = (f"วิเคราะห์สิ่งนี้: '{t2_raw}' โดยให้เปรียบเทียบชัดเจนว่าคู่แข่งไทยเช่น Wongnai POS, Ocha มีฟีเจอร์นี้หรือไม่ "
+                          f"และรูปแบบของเขาเป็นอย่างไร ตอบแบบสั้น กระชับ เป็นข้อๆ")
+                    st.session_state['t2_insight'] = run_ai(gemini_key, p2)
+                    
+                    # บันทึกลง Supabase
+                    if supabase_url and supabase_key:
+                        h = {"apikey": supabase_key.strip(), "Authorization": f"Bearer {supabase_key.strip()}", "Content-Type": "application/json"}
+                        payload = {"store_name": t2_store, "raw_complaint": t2_raw, "ai_category": "Market_Analysis", "ai_elaborated_summary": st.session_state['t2_insight'][:200]}
+                        requests.post(f"{supabase_url.strip()}/rest/v1/onboarding_tickets", headers=h, json=payload)
+                        st.success("✅ บันทึกและวิเคราะห์สำเร็จ!")
+
+    with col_hist:
+        st.subheader("📜 History & Insights")
         if 't2_insight' in st.session_state:
-            st.metric("Staff Rating", st.session_state['t2_rate_val'])
-            st.subheader("💡 Market Insights")
             st.info(st.session_state['t2_insight'])
+        
+        st.write("ประวัติล่าสุด:")
+        if not df_all.empty:
+            st.dataframe(df_all[['created_at', 'store_name', 'ai_category', 'ai_elaborated_summary']].head(10), use_container_width=True)
+            
+            # ปุ่มส่งข้อมูลไป Google Sheet (จำลองการสร้าง CSV ให้โหลด หรือแจ้งเตือน)
+            csv = df_all.to_csv(index=False).encode('utf-8')
+            st.download_button("📊 Download to Google Sheets (CSV)", data=csv, file_name='storehub_history.csv', mime='text/csv')
