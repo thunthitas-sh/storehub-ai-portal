@@ -5,37 +5,54 @@ import requests
 from PIL import Image
 import urllib.parse
 import altair as alt
+import cv2
+import tempfile
+import os
 
-# 1. ตั้งค่าหน้าเว็บให้เสถียรที่สุด
-st.set_page_config(page_title="StoreHub Intelligence Portal", layout="wide")
+# 1. Page Config
+st.set_page_config(page_title="StoreHub CX Intelligence Portal", layout="wide")
 st.title("🚀 StoreHub CX Intelligence Portal")
 
-# 2. Sidebar Configuration
+# 2. Sidebar
 st.sidebar.header("🔑 System Configuration")
 supabase_url = st.sidebar.text_input("Supabase URL")
 supabase_key = st.sidebar.text_input("Supabase Key", type="password")
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-# ฟังก์ชันดึงประวัติล่าสุด
 def fetch_data():
     if supabase_url and supabase_key:
         try:
             headers = {"apikey": supabase_key.strip(), "Authorization": f"Bearer {supabase_key.strip()}"}
             res = requests.get(f"{supabase_url.strip()}/rest/v1/onboarding_tickets?select=*&order=created_at.desc", headers=headers)
-            if res.status_code == 200:
-                return pd.DataFrame(res.json())
+            if res.status_code == 200: return pd.DataFrame(res.json())
         except: pass
     return pd.DataFrame()
 
-# ฟังก์ชันเรียก AI แบบ Auto-Detect รุ่นโมเดล (แก้ปัญหา 404)
+# ฟังก์ชันดึงภาพจากวิดีโอเพื่อให้ AI วิเคราะห์ได้
+def process_video_file(video_file):
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
+        tmp.write(video_file.read())
+        video_path = tmp.name
+    
+    cap = cv2.VideoCapture(video_path)
+    frames = []
+    count = 0
+    while count < 3: # ดึงออกมา 3 เฟรม (ต้น-กลาง-ท้าย) เพื่อประหยัดโควตา
+        cap.set(cv2.CAP_PROP_POS_MSEC, (count * 2000)) 
+        success, image = cap.read()
+        if success:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            frames.append(Image.fromarray(image))
+        count += 1
+    cap.release()
+    os.unlink(video_path)
+    return frames
+
 def run_ai(content_list):
     try:
         genai.configure(api_key=gemini_key.strip())
-        # ค้นหาโมเดลที่บัญชีนี้เข้าถึงได้จริง
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # เลือก Flash ก่อน ถ้าไม่มีให้เลือกตัวอื่นที่ใช้งานได้
         selected = next((m for m in available_models if "flash" in m), available_models[0])
-        
         model = genai.GenerativeModel(selected)
         response = model.generate_content(content_list)
         return response.text
@@ -53,32 +70,34 @@ with tab1:
             t1_store = st.text_input("🏢 ชื่อร้านค้า")
             t1_contact = st.text_input("👤 ข้อมูลผู้ติดต่อ (ชื่อ/เบอร์)")
             t1_time = st.text_input("⏰ เวลาสะดวกให้ติดต่อกลับ")
-            # กล่องข้อความเพิ่มเติมที่ต้องมี
-            t1_raw = st.text_area("📝 รายละเอียดปัญหาเพิ่มเติม", placeholder="ระบุรายละเอียดปัญหาเพื่อให้ AI วิเคราะห์ร่วมกับไฟล์")
+            t1_raw = st.text_area("📝 รายละเอียดปัญหาเพิ่มเติม")
             t1_files = st.file_uploader("📸 แนบภาพหรือวิดีโอ", type=['png','jpg','jpeg','mp4','mov'])
             submit1 = st.form_submit_button("✨ วิเคราะห์และร่างเมลละเอียด", type="primary")
 
             if submit1 and gemini_key:
-                with st.spinner("AI กำลังวิเคราะห์รายละเอียด..."):
+                with st.spinner("AI กำลังวิเคราะห์ไฟล์สื่อ..."):
                     prompt = (
-                        f"วิเคราะห์ปัญหาจากข้อความ: '{t1_raw}' และจากไฟล์ที่แนบมา "
+                        f"วิเคราะห์ปัญหาจากข้อความ: '{t1_raw}' และจากหลักฐานที่แนบมา "
                         "สรุปปัญหาเป็นข้อๆ สั้นๆ กระชับที่สุด (Bullet points)"
                     )
                     content = [prompt]
-                    if t1_files and t1_files.type.startswith('image'):
-                        content.append(Image.open(t1_files))
+                    if t1_files:
+                        if t1_files.type.startswith('image'):
+                            content.append(Image.open(t1_files))
+                        elif t1_files.type.startswith('video'):
+                            frames = process_video_file(t1_files)
+                            content.extend(frames) # ส่งเฟรมภาพนิ่งจากวิดีโอไปให้ AI
                     
                     st.session_state['t1_analysis'] = run_ai(content)
 
     with c2:
         if 't1_analysis' in st.session_state:
             st.subheader("📧 ร่างอีเมลแจ้งทีม Care")
-            # จัดลำดับเนื้อหาตามที่คุณสั่ง
             mail_body = (
                 f"เรียน ทีม Care,\n\n"
                 f"**ข้อมูลผู้ติดต่อ:** {t1_contact}\n"
                 f"**เวลาติดต่อกลับ:** {t1_time if t1_time else 'ASAP'}\n\n"
-                f"**รายละเอียดวิเคราะห์จากภาพและคำบัญชีย้าย:**\n{st.session_state['t1_analysis']}\n\n"
+                f"**รายละเอียดวิเคราะห์จากภาพ/วิดีโอและคำบัญชีย้าย:**\n{st.session_state['t1_analysis']}\n\n"
                 f"รบกวนทีมแคร์ติดต่อกลับและสอบถามรายละเอียดเพิ่มเติม"
             )
             st.text_area("ตรวจสอบเนื้อหาอีเมล:", value=mail_body, height=350)
@@ -86,7 +105,7 @@ with tab1:
             encoded_bo = urllib.parse.quote(mail_body)
             st.markdown(f'<a href="https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_su}&body={encoded_bo}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">📬 ส่ง Gmail</a>', unsafe_allow_html=True)
 
-# --- TAB 2: Analysis & Dashboard ---
+# --- TAB 2: คงเดิม ---
 with tab2:
     df_history = fetch_data()
     st.subheader("📈 Dashboard & History")
@@ -122,4 +141,3 @@ with tab2:
         if 't2_insight' in st.session_state: st.info(st.session_state['t2_insight'])
         if not df_history.empty:
             st.dataframe(df_history[['created_at', 'store_name', 'ai_elaborated_summary']].head(10), use_container_width=True)
-            st.download_button("📥 Download CSV for Sheets", data=df_history.to_csv(index=False).encode('utf-8'), file_name='storehub_insights.csv', mime='text/csv')
