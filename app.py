@@ -6,8 +6,8 @@ import requests
 from PIL import Image
 import urllib.parse
 
-# 1. ตั้งค่าหน้าเว็บ (ต้องเป็นคำสั่งแรกสุด)
-st.set_page_config(page_title="StoreHub CX Intelligence 2026", layout="wide")
+# 1. ตั้งค่าหน้าเว็บพื้นฐาน
+st.set_page_config(page_title="StoreHub CX Intelligence", layout="wide")
 
 st.title("🚀 StoreHub CX Intelligence Portal")
 st.markdown("---")
@@ -31,23 +31,25 @@ def fetch_history(url, key):
             pass
     return pd.DataFrame()
 
-# ฟังก์ชันเรียก AI แบบเสถียร (แก้ปัญหา 404 โดยใช้รุ่นมาตรฐาน)
+# ฟังก์ชันเรียก AI แบบ Auto-Detect รุ่นโมเดล (แก้ปัญหา 404 ถาวร)
 def run_ai_analysis(api_key, prompt_data):
     try:
         genai.configure(api_key=api_key.strip())
-        # ใช้รุ่นมาตรฐานที่ Google รองรับในปัจจุบัน
-        model = genai.GenerativeModel('gemini-pro') 
+        
+        # ค้นหาโมเดลที่ใช้งานได้จริงในบัญชีปัจจุบัน
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # เลือกโมเดล Flash เป็นหลัก หากไม่มีให้ใช้รุ่น Pro หรือตัวแรกที่เจอ
+        selected_model = next((m for m in available_models if "flash" in m), 
+                             next((m for m in available_models if "pro" in m), 
+                             available_models[0]))
+        
+        model = genai.GenerativeModel(selected_model)
         response = model.generate_content(prompt_data)
         return response.text
     except Exception as e:
-        # หาก gemini-pro ไม่รองรับภาพ ให้ลอง fallback ไปที่รุ่นล่าสุด
-        try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
-            response = model.generate_content(prompt_data)
-            return response.text
-        except:
-            st.error(f"❌ AI Error: {str(e)}")
-            return None
+        st.error(f"❌ AI Error: {str(e)}")
+        return None
 
 # สร้าง Tabs
 tab1, tab2 = st.tabs(["📧 Escalation Tool", "🛡️ Strategic Analysis"])
@@ -67,10 +69,10 @@ with tab1:
 
             if submit_esc:
                 if not gemini_key:
-                    st.error("กรุณาใส่ Gemini Key")
+                    st.error("กรุณาใส่ Gemini Key ที่ Sidebar")
                 else:
-                    with st.spinner("AI กำลังทำงาน..."):
-                        content = [f"สรุปปัญหาร้าน {name} สั้นๆ 1 ประโยค และร่างอีเมลแจ้งทีม care จากข้อมูล: {detail}"]
+                    with st.spinner("AI กำลังวิเคราะห์ข้อมูล..."):
+                        content = [f"สรุปปัญหาร้าน {name} สั้นๆ 1 ประโยค และร่างอีเมลแจ้งทีม care: {detail}"]
                         if files:
                             for f in files:
                                 content.append(Image.open(f))
@@ -92,11 +94,12 @@ with tab1:
 
     if 't1_res' in st.session_state:
         st.markdown("---")
-        final_mail = f"เรียน ทีม Care,\n\n{st.session_state['t1_res']}\n\n🏢 ชื่อร้าน: {name}\n👤 ผู้ติดต่อ: {contact}\n⏰ เวลาติดต่อ: {time if time else 'ทันที'}\n\nรบกวนติดต่อกลับร้านค้าและสอบถามรายละเอียดเพิ่มเติม"
-        edited_email = st.text_area("📧 ตรวจสอบอีเมล:", value=final_mail, height=200)
+        email_body = f"เรียน ทีม Care,\n\n{st.session_state['t1_res']}\n\n🏢 ชื่อร้าน: {name}\n👤 ผู้ติดต่อ: {contact}\n⏰ เวลาติดต่อ: {time if time else 'ทันที'}\n\nรบกวนติดต่อกลับร้านค้าและสอบถามรายละเอียดเพิ่มเติม"
+        st.text_area("📧 ร่างอีเมล (ตรวจสอบก่อนส่ง):", value=email_body, height=200)
+        
         encoded_su = urllib.parse.quote(f"Escalation: {name}")
-        encoded_bo = urllib.parse.quote(edited_email)
-        st.markdown(f'<a href="https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_su}&body={encoded_bo}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">📩 เปิด Gmail ส่งทันที</a>', unsafe_allow_html=True)
+        encoded_bo = urllib.parse.quote(email_body)
+        st.markdown(f'<a href="https://mail.google.com/mail/?view=cm&fs=1&to=care.th@storehub.com&su={encoded_su}&body={encoded_bo}" target="_blank" style="background-color: #D44638; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">📬 เปิด Gmail และส่งทันที</a>', unsafe_allow_html=True)
 
 # --- TAB 2: Market Analysis ---
 with tab2:
@@ -111,13 +114,16 @@ with tab2:
             submit_t2 = st.form_submit_button("🧠 วิเคราะห์กลยุทธ์", type="primary")
 
             if submit_t2:
-                with st.spinner("AI กำลังเปรียบเทียบตลาด..."):
-                    p2 = f"วิเคราะห์ความรุนแรง (1-10) และเปรียบเทียบฟีเจอร์นี้กับคู่แข่ง POS ในไทย ปัญหานี้ควรพัฒนาด่วนแค่ไหน (Must/Should/Nice to have): {t2_detail}"
-                    data_t2 = [p2]
-                    if t2_img:
-                        data_t2.append(Image.open(t2_img))
-                    st.session_state['t2_insight'] = run_ai_analysis(gemini_key, data_t2)
-                    st.session_state['t2_rate_val'] = t2_rate
+                if not gemini_key:
+                    st.error("กรุณากรอก Gemini API Key")
+                else:
+                    with st.spinner("AI กำลังเปรียบเทียบตลาด..."):
+                        p2 = f"วิเคราะห์ความรุนแรง (1-10) และเปรียบเทียบฟีเจอร์นี้กับคู่แข่ง POS ในไทย ปัญหานี้ควรพัฒนาด่วนแค่ไหน (Must/Should/Nice to have): {t2_detail}"
+                        data_t2 = [p2]
+                        if t2_img:
+                            data_t2.append(Image.open(t2_img))
+                        st.session_state['t2_insight'] = run_ai_analysis(gemini_key, data_t2)
+                        st.session_state['t2_rate_val'] = t2_rate
 
     with c2:
         if 't2_insight' in st.session_state:
